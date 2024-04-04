@@ -3,3 +3,10 @@ langchain_core
 python-dotenv
 streamlit
 langchain_community
+chainlit
+langchain
+PyPDF2
+chromadb
+groq
+langchain-groq
+ollama

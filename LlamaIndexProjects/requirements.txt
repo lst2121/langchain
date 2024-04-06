@@ -1,0 +1,18 @@
+# langchain_openai 
+# langchain_core
+# python-dotenv
+# streamlit
+# langchain_community
+# chainlit
+# langchain
+# PyPDF2
+# chromadb
+# groq
+# langchain-groq
+# ollama
+llama-index==0.9.15
+langchain==0.0.350
+sentence-transformers
+weaviate-client
+pypdf
+python-box 

@@ -21,7 +21,8 @@ from langchain_core.runnables import RunnablePassthrough, ConfigurableField
 from langchain_community.llms.ollama import Ollama
 from langchain_community.embeddings.ollama import OllamaEmbeddings
 from langchain.prompts import PromptTemplate
-from langchain.retrievers import bm25, EnsembleRetriever
+# from langchain.retrievers import EnsembleRetriever
+
 from langchain_community.vectorstores.utils import DistanceStrategy
 from langchain.chains.retrieval_qa.base import RetrievalQA
 
@@ -32,8 +33,8 @@ def data_ingestion():
     documents=loader.load()
 
     # - in our testing Character split works better with this PDF data set
-    text_splitter=RecursiveCharacterTextSplitter(chunk_size=10000,
-                                                 chunk_overlap=1000)
+    text_splitter=RecursiveCharacterTextSplitter(chunk_size=1000,
+                                                 chunk_overlap=100)
     
     docs=text_splitter.split_documents(documents)
     return docs

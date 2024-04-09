@@ -4,142 +4,156 @@ LANGCHAIN_ENDPOINT = os.getenv(key="LANGCHAIN_ENDPOINT")
 LANGCHAIN_TRACING_V2 = os.getenv(key="LANGCHAIN_TRACING_V2")
 LANGCHAIN_PROJECT = os.getenv(key="LANGCHAIN_PROJECT")
 
-# import modules
-from bs4 import BeautifulSoup
-from typing import Optional, List, Tuple # type: ignore
-from IPython.display import display, Markdown
+
+import bs4
 import streamlit as st
-from langchain import hub
-## Data Ingestion
-from pypdf import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import WebBaseLoader, DataFrameLoader, TextLoader, PyPDFDirectoryLoader
-# Vector Embedding And Vector Store
-from langchain_community.vectorstores import Chroma, FAISS
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.vectorstores import Chroma
+from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, ConfigurableField
-from langchain_community.llms.ollama import Ollama
-from langchain_community.embeddings.ollama import OllamaEmbeddings
-from langchain.prompts import PromptTemplate
-# from langchain.retrievers import EnsembleRetriever
-
-from langchain_community.vectorstores.utils import DistanceStrategy
-from langchain.chains.retrieval_qa.base import RetrievalQA
-
+from langchain import hub
+from langchain.llms.ollama import Ollama
+from langchain.embeddings.ollama import OllamaEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 ## Data ingestion
 def data_ingestion():
-    loader=PyPDFDirectoryLoader("data")
-    documents=loader.load()
-
-    # - in our testing Character split works better with this PDF data set
-    text_splitter=RecursiveCharacterTextSplitter(chunk_size=1000,
-                                                 chunk_overlap=100)
-    
-    docs=text_splitter.split_documents(documents)
-    return docs
-
-# create the llm using phi Model
-# model_kwargs={'maxTokens':512})(can be passed)
-def phi_llm(temperature):
-    llm = Ollama(model="phi", temperature=temperature, timeout=300)
-    return llm
-
-# create the llm using llama2 Model
-def llama2_llm(temperature):
-    llm = Ollama(model="phi", temperature=temperature, timeout=300)
-    return llm
-
-# create the llm using llama2 Model
-def Gemma_llm(temperature):
-    llm = Ollama(model="phi", temperature=temperature, timeout=300)
-    return llm
-
-# create the llm using phi Model
-embed_llm = OllamaEmbeddings(model="nomic-embed-text")
-
-## Vector Embedding and vector store
-def get_vector_store(docs):
-    vectorstore_faiss=FAISS.from_documents(
-        docs,
-        embed_llm
+    loader = WebBaseLoader(
+        web_paths=("https://lilianweng.github.io/posts/2023-06-23-agent/",),
+        bs_kwargs=dict(
+            parse_only=bs4.SoupStrainer(
+                class_=("post-content", "post-title", "post-header")
+            )
+        ),
     )
-    vectorstore_faiss.save_local("faiss_index")
-  
-
-# define prompt template
-prompt_template = """
-
-Human: Use the following pieces of context to provide a 
-concise answer to the question at the end but usse atleast summarize with 
-250 words with detailed explaantions. If you don't know the answer, 
-just say that you don't know, don't try to make up an answer.
-<context>
-{context}
-</context
-
-Question: {question}
-
-Assistant:"""
+    docs = loader.load()
+    # Split Data
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splits = text_splitter.split_documents(documents=docs)
+    return splits
 
 
-prompt = PromptTemplate(
-    template=prompt_template, input_variables=["context", "question"]
-)
+def phi_llm():
+    llm = Ollama(model="phi", temperature=0, timeout=300)
+    return llm
 
-PROMPT = PromptTemplate(
-    template=prompt_template, input_variables=["context", "question"]
-)
 
-def get_response_llm(llm,vectorstore_faiss,query):
-    qa = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=vectorstore_faiss.as_retriever(
-        search_type="similarity", search_kwargs={"k": 3}
-    ),
-    return_source_documents=True,
-    chain_type_kwargs={"prompt": PROMPT}
+def gemma_llm():
+    llm = Ollama(model="gemma", temperature=0, timeout=300)
+    return llm
+
+
+def embed_llm():
+    llm = OllamaEmbeddings(model="nomic-embed-text")
+    return llm
+
+# persist_directory = "chroma_index"
+# create a vector store
+# def create_vector_store(doc):
+#     vectordb = Chroma.from_documents(documents=doc, embedding=embed_llm(), persist_directory="chroma_index")
+#     vectordb.persist()
+#     return vectordb
+
+# create a vector store
+def create_vector_store(doc):
+    vectordb = Chroma.from_documents(documents=doc, embedding=embed_llm(), persist_directory="chroma_index")
+    vectordb.persist()
+    return vectordb
+
+# create retriever
+# def create_retriever():
+#     vectorstore = Chroma(persist_directory="chroma_index", embedding_function=embed_llm())
+#     retriever = vectorstore.as_retriever()
+#     return retriever
+
+def create_retriever():
+    vectorstore = Chroma(persist_directory="chroma_index", embedding_function=embed_llm())
+    retriever = vectorstore.as_retriever()
+    return retriever
+
+
+# Post-processing
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+def get_llm_response(llm, retriever, question):
+    prompt = hub.pull("rlm/rag-prompt")
+    rag_chain = (
+            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            | prompt
+            | llm
+            | StrOutputParser()
     )
-    answer=qa({"query":query})
-    return answer['result']
+    answer = rag_chain.invoke({"question": question})
+    return answer
+
 
 
 def main():
-    st.set_page_config("Chat PDF")
-    st.header("Chat with PDF using Ollama")
+    st.set_page_config("RAG App")
+    st.title("RAG App")
 
-    user_question = st.text_input("Ask any Question from your PDF Files")
+    persist_directory="chroma_index"
 
-    with st.sidebar:
-        st.title("Update Or Create Vectore Store")
+    # Load data and create vector store
+    st.sidebar.subheader("Data Ingestion")
+    if st.sidebar.button("Ingest Data"):
+        docs = data_ingestion()
+        vectordb = create_vector_store(docs)
+        st.sidebar.success("Data ingested and vector store created.")
 
-        if st.button("Vectors Update"):
-            with st.spinner("Processing Your Files...."):
-                docs = data_ingestion()
-                get_vector_store(docs=docs)
-                st.success("Done")
-    
-    if st.button("Use Gemma:2b"):
-        with st.spinner("Processing with Gemma...."):
-                faiss_index = FAISS.load_local("faiss_index", embed_llm())
-                llm = Gemma_llm(0)    #provide temperature
+    # Select LLM
+    st.sidebar.subheader("Select LLM")
+    llm_option = st.sidebar.radio("Choose LLM:", ("Phi", "Gemma"))
+    if llm_option == "Phi":
+        llm = phi_llm()
+    elif llm_option == "Gemma":
+        llm = gemma_llm()
+        
 
-                #faiss_index = get_vector_store(docs)
-                st.write(get_response_llm(llm,faiss_index,user_question))
-                st.success("Done")
-
-    if st.button("Use Phi:2"):
-        with st.spinner("Processing with Phi...."):
-                faiss_index = FAISS.load_local("faiss_index", embed_llm())
-                llm = phi_llm(0)    #provide temperature
-
-                #faiss_index = get_vector_store(docs)
-                st.write(get_response_llm(llm,faiss_index,user_question))
-                st.success("Done")
+    # User input
+    user_question = st.text_input("Ask any question:")
+    if st.button("Get Answer"):
+        retriever = create_retriever()
+        answer = get_llm_response(llm, retriever, user_question)
+        st.write("Answer:", answer)
 
 if __name__ == "__main__":
     main()
+
+# def main():
+#     st.set_page_config("RAG App")
+#     st.title("RAG App")
+
+#     vectorstore = None  # Initialize vectorstore variable outside the button block
+
+#     # Load data and create vector store
+#     st.sidebar.subheader("Data Ingestion")
+#     if st.sidebar.button("Ingest Data"):
+#         docs = data_ingestion()
+#         vectorstore = create_vector_store(docs)
+#         st.sidebar.success("Data ingested and vector store created.")
+
+#     # Select LLM
+#     st.sidebar.subheader("Select LLM")
+#     llm_option = st.sidebar.radio("Choose LLM:", ("Phi", "Gemma"))
+#     if llm_option == "Phi":
+#         llm = phi_llm()
+#     elif llm_option == "Gemma":
+#         llm = gemma_llm()
+
+#     # User input
+#     user_question = st.text_input("Ask any question:")
+#     if st.button("Get Answer"):
+#         retriever = create_retriever(vectorstore)
+#         answer = get_llm_response(llm, retriever, user_question)
+#         st.write("Answer:", answer)
+
+
+# if __name__ == "__main__":
+#     main()
+
 
 
 

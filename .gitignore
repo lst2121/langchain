@@ -146,6 +146,9 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
+# embedding cache
+Rag_From_Scratch/free_code_camp/cache
+
 
 
 # Pyre type checker

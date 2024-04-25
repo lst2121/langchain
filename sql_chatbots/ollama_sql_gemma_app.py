@@ -109,7 +109,7 @@ chain = (
         response=lambda x: db.run(x["query"]),
     )
     | prompt_response
-    | phi_llm
+    | gemma_llm
 )
 
 # print(chain.invoke({"question": "How many different teams are there in nba roaster?"}))
